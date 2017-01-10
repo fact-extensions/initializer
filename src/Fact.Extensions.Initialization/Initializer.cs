@@ -151,6 +151,7 @@ namespace Fact.Extensions.Initialization
         /// (since order tends to be important, we want the already running
         /// i.e. previously registered ones to go first)
         /// </summary>
+        /// <remarks>TODO: consider replacing this mechanism with a classic semaphore</remarks>
         static object eventFireLocker = new object();
 
         /// <summary>
@@ -348,7 +349,8 @@ namespace Fact.Extensions.Initialization
                             {
                                 loggerGeneral.LogInformation("Initialize: Untested portion.  Forcing ToArray() to fail fast");
                                 var manualLoadSplit = manualLoad.Split(',');
-                                var _assemblyList = manualLoadSplit.Select(x => Assembly.Load(x));
+                                
+                                var _assemblyList = manualLoadSplit.Select(x => Assembly.Load(new AssemblyName(x)));
                                 assemblyList = _assemblyList.ToArray();
                             }
 
