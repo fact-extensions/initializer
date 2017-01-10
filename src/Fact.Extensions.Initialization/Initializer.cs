@@ -2,11 +2,6 @@
 #define SUPPRESS_OFFICE
 #endif
 
-#if NETCORE
-#else
-#define LEGACY_CONFIG_ENABLED
-#endif
-
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -25,8 +20,9 @@ using System.Collections;
 using System.Threading;
 using System.Diagnostics;
 using System.Threading.Tasks;
-using Castle.Core.Logging;
-using Fact.Apprentice.Configuration;
+#if FEATURE_POLICY
+using Fact.Extensions.Configuration;
+#endif
 using Microsoft.Extensions.Logging;
 
 namespace Fact.Extensions.Initialization
@@ -80,23 +76,14 @@ namespace Fact.Extensions.Initialization
     // until my understanding of what's changed improves
     public static class Initializer
     {
-        /// <summary>
-        /// Kludge _PreInitializer until we sort out chicken-and-the-egg logger situation
-        /// </summary>
-        /// <param name="logger"></param>
-        /// <param name="loggerGeneral"></param>
-        static void _PreInitialize(ILogger logger, ILogger loggerGeneral)
-        {
-            Initializer.logger = logger;
-            Initializer.loggerGeneral = loggerGeneral;
-        }
-
         // TODO: make these readonly again asap
-        static ILogger logger = LogManager.CreateLogger("Initialier");
-        static ILogger loggerGeneral = LogManager.CreateLogger("General");
+        static readonly ILogger logger = LogManager.GetLogger("Initialier");
+        static readonly ILogger loggerGeneral = LogManager.GetLogger("General");
 #if FEATURE_POLICY
         static readonly IPolicyProvider policyProvider = PolicyProvider.Get();
         static readonly ExceptionPolicy exceptionPolicy = policyProvider.GetExceptionPolicy();
+#else
+        static readonly ExceptionPolicy exceptionPolicy = new ExceptionPolicy();
 #endif
         static bool _initialized = false;
         static bool _initializing = false;
@@ -330,8 +317,8 @@ namespace Fact.Extensions.Initialization
 
                     try
                     {
-                        logger.Info("Initializer::Initialize: using '" + executing.FullName + "' as entry assembly");
-                        logger.Info("Initializer::Initialize: executing = " + executing);
+                        logger.LogInformation("Initializer::Initialize: using '" + executing.FullName + "' as entry assembly");
+                        logger.LogInformation("Initializer::Initialize: executing = " + executing);
 
                         var assemblyListTask = Task.Factory.StartNew(() =>
                         {
@@ -355,17 +342,21 @@ namespace Fact.Extensions.Initialization
 
                             // the initial appSetting load can be time consuming.  Log here to see just how long
                             // it takes
-                            loggerGeneral.Debug("Initialize: manualLoad = " + manualLoad);
+                            loggerGeneral.LogDebug("Initialize: manualLoad = " + manualLoad);
 
                             if (!string.IsNullOrEmpty(manualLoad))
                             {
-                                loggerGeneral.Info("Initialize: Untested portion.  Forcing ToArray() to fail fast");
+                                loggerGeneral.LogInformation("Initialize: Untested portion.  Forcing ToArray() to fail fast");
                                 var manualLoadSplit = manualLoad.Split(',');
                                 var _assemblyList = manualLoadSplit.Select(x => Assembly.Load(x));
                                 assemblyList = _assemblyList.ToArray();
                             }
 
+#if EXPERIMENTAL_PLUGIN_SUPPORT                            
                             AppDomain.CurrentDomain.AssemblyResolve += CurrentDomain_AssemblyResolve;
+#endif
+
+#if PLUGIN_SUPPORT
 
 							var manualLoadDir = Global.Config.PluginDirectory;
 
@@ -389,10 +380,11 @@ namespace Fact.Extensions.Initialization
                                 }
                                 catch (DirectoryNotFoundException e)
                                 {
-                                    loggerGeneral.Error("Initialize plugin initialization failed: cannot open directory " + manualLoadDir + " / " + e.Message);
-                                    loggerGeneral.Error("Initialize plugin initialization failed: stack trace" + e.StackTrace, e);
+                                    loggerGeneral.LogError("Initialize plugin initialization failed: cannot open directory " + manualLoadDir + " / " + e.Message);
+                                    loggerGeneral.LogError("Initialize plugin initialization failed: stack trace" + e.StackTrace, e);
                                 }
                             }
+#endif
 
                             return assemblyList;
                         });
@@ -559,13 +551,13 @@ namespace Fact.Extensions.Initialization
                         exceptionPolicy.HandleException(e);
                         /*
                         // Debug: can check currentlyLoadItem here
-                        loggerGeneral.ErrorWithInspection("Problem during initialization: ", e);
+                        loggerGeneral.LogErrorWithInspection("Problem during initialization: ", e);
                         throw;*/
                     }
                 }
                 else
                 {
-                    logger.Info("Initializer::Initialize: Already initialized");
+                    logger.LogInformation("Initializer::Initialize: Already initialized");
                 }
             }
         }
@@ -592,6 +584,7 @@ namespace Fact.Extensions.Initialization
                 IsInitializedEventFiring = false;
         }
 
+#if EXPERIMENTAL_PLUGIN_SUPPORT
         /// <summary>
         /// Tries to resolve assemblies directly out of our specified plugin directory
         /// 
@@ -615,6 +608,7 @@ namespace Fact.Extensions.Initialization
 
             return assembly;
         }
+#endif
 
         /// <summary>
         /// Returns true when all subsytems have completed initialization
@@ -645,10 +639,12 @@ namespace Fact.Extensions.Initialization
         /// </summary>
         public static bool IsAsyncInitializing { get; private set; }
 
+#if FEATURE_VERSION_INSPECT
         /// <summary>
         /// Acquires Apprentice-specific version info from an assembly
         /// </summary>
         /// <param name="assembly"></param>
+        /// <remarks>This will be broken since new builds don't autogenerate version stamps</remarks>
         /// <returns></returns>
         static string GetVersion(Assembly assembly)
         {
@@ -656,13 +652,19 @@ namespace Fact.Extensions.Initialization
             if (type == null)
                 return null;
 
-            var field = type.GetField("Version");
+            var field = type.
+                GetTypeInfo().
+                GetField("Version");
 
             var value = (string) field.GetValue(null);
 
             return value;
         }
 
+        /// <summary>
+        /// This will be broken since version-stamp-embedding hasn't been brought back
+        /// </summary>
+        /// <returns></returns>
         public static IEnumerable<KeyValuePair<Assembly, string>> Versions
         {
             get
@@ -677,6 +679,7 @@ namespace Fact.Extensions.Initialization
                 return loaded.Select(x => new KeyValuePair<Assembly, string>(x, GetVersion(x)));
             }
         }
+#endif
 
         static LinkedList<Assembly> loaded = new LinkedList<Assembly>();
 
@@ -837,7 +840,7 @@ namespace Fact.Extensions.Initialization
 
                 if (!string.IsNullOrEmpty(str))
                 {
-                    logger.Info("Initialize::Initialize: attempting to use '" + str + "' as entry assembly");
+                    logger.LogInformation("Initialize::Initialize: attempting to use '" + str + "' as entry assembly");
 
                     entry = Assembly.Load(str);
                 }
@@ -929,12 +932,16 @@ namespace Fact.Extensions.Initialization
     }
 
 	public class AssemblyDependencyBuilder : 
-		Fact.Apprentice.Collection.InitializingDependencyBuilder<Assembly>
+		InitializingDependencyBuilder<Assembly>
 	{
-        static readonly ILogger logger = LogManager.GetCurrentClassLogger();
+        static readonly ILogger logger = LogManager.CreateLogger<AssemblyDependencyBuilder>();
         static readonly ILogger loggerInit = LogManager.GetLogger("Initialization");
+#if FEATURE_POLICY
         static readonly IPolicyProvider policyProvider = PolicyProvider.Get();
         static readonly ExceptionPolicy exceptionPolicy = policyProvider.GetExceptionPolicy();
+#else
+        static readonly ExceptionPolicy exceptionPolicy = new ExceptionPolicy();
+#endif
 
         Task<IEnumerable<Assembly>> assemblyList;
 
@@ -993,7 +1000,7 @@ namespace Fact.Extensions.Initialization
 		/// </summary>
 		EventWaitHandle rootNodeEvh = new EventWaitHandle(false, EventResetMode.ManualReset);
 
-		protected override Fact.Apprentice.Collection.DependencyBuilder<Assembly>.Item CreateItem(Assembly key)
+		protected override DependencyBuilder<Assembly>.Item CreateItem(Assembly key)
 		{
 			return new _Item(key, this);
 		}
@@ -1018,7 +1025,8 @@ namespace Fact.Extensions.Initialization
 		{
             foreach (var item in FILO)
             {
-                loggerInit.Info("Shutdown for assembly: " + item.loader.GetType().Assembly.FullName);
+                loggerInit.LogInformation("Shutdown for assembly: " + 
+                    item.loader.GetType().GetTypeInfo().Assembly.FullName);
                 ((ILoaderShutdown)item.loader).Shutdown();
             }
 		}
@@ -1062,7 +1070,7 @@ namespace Fact.Extensions.Initialization
 				{
 					var hasLoader = loader is ILoader;
 
-					loggerInit.Info("Inspecting: " + Name + (hasLoader ? " (has loader)" : ""));
+					loggerInit.LogInformation("Inspecting: " + Name + (hasLoader ? " (has loader)" : ""));
 
                     return hasLoader;
 #if UNUSED
@@ -1177,7 +1185,7 @@ namespace Fact.Extensions.Initialization
 				if (InitBegin != null)
 					InitBegin(this);
 
-				loggerInit.Info("Initializing: " + Name + ": " + Children.Cast<Item>().
+				loggerInit.LogInformation("Initializing: " + Name + ": " + Children.Cast<Item>().
 					Select(x => x.Name + (x.IsInitialized ? " " : " not ") + "initialized").
 					ToString(", "));
 
@@ -1187,17 +1195,19 @@ namespace Fact.Extensions.Initialization
                 }
                 catch(TypeLoadException tle)
                 {
-                    loggerInit.Error("Initializing: " + Name + " failed.  Could not load assembly because " + tle.TypeName + " could not be loaded");
+                    loggerInit.LogError("Initializing: " + Name + " failed.  Could not load assembly because " + tle.TypeName + " could not be loaded");
                     throw new TypeLoadException("Could not initialize Assembly " + Name + " because " 
                         + tle.TypeName + " could not be loaded", tle); 
                 }
                 catch(Exception e)
                 {
-                    loggerInit.ErrorWithInspection("Initializing: " + Name + " failed.", e);
+                    // TODO: bring this back, useful to have the deep stack tracing
+                    //loggerInit.ErrorWithInspection("Initializing: " + Name + " failed.", e);
+                    loggerInit.LogError("Initializing: " + Name + " failed.", e);
                     throw new InvalidOperationException("Could not initialize: " + Name, e);
                 }
 
-				loggerInit.Info("Initialized: " + Name);
+				loggerInit.LogInformation("Initialized: " + Name);
 			}
 
 			public _Item(Assembly key, AssemblyDependencyBuilder parent) 
@@ -1233,7 +1243,7 @@ namespace Fact.Extensions.Initialization
 
 				if (loaderAsync != null)
 				{
-					loggerInit.Info("Initializing (async kickoff): " + this.value.GetName().Name);
+					loggerInit.LogInformation("Initializing (async kickoff): " + this.value.GetName().Name);
 
 					lock (parent.AsyncInitializing)
 					{
@@ -1246,11 +1256,11 @@ namespace Fact.Extensions.Initialization
 #if NET40
                     loaderAsyncTask = taskFactory.StartNew(() =>
                     {
-                        loggerInit.Info("Initializing (async actual): " + this.value.GetName().Name);
+                        loggerInit.LogInformation("Initializing (async actual): " + this.value.GetName().Name);
 
                         loaderAsync.Load();
 
-                        loggerInit.Info("Initialized (async): " + this.value.GetName().Name);
+                        loggerInit.LogInformation("Initialized (async): " + this.value.GetName().Name);
                     }, exceptionPolicy.HandleException);
 
                     loaderAsyncTask.ContinueWith(antecendent =>
@@ -1266,7 +1276,7 @@ namespace Fact.Extensions.Initialization
 #else
                     loaderAsyncTask = taskFactory.StartNew(() =>
                         {
-                            loggerInit.Info("Initializing (async actual): " + this.value.GetName().Name);
+                            loggerInit.LogInformation("Initializing (async actual): " + this.value.GetName().Name);
 
                             loaderAsync.Load();
                             lock (parent.AsyncInitializing)
@@ -1277,7 +1287,7 @@ namespace Fact.Extensions.Initialization
                             if (AsyncEnd != null)
                                 AsyncEnd(this);
 
-                            loggerInit.Info("Initialized (async): " + this.value.GetName().Name);
+                            loggerInit.LogInformation("Initialized (async): " + this.value.GetName().Name);
                         }, exceptionPolicy.HandleException);
 #endif
 				}

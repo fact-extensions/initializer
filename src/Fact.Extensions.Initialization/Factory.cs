@@ -1005,7 +1005,7 @@ namespace Fact.Extensions.Initialization
                     if (ChildrenUninitialized.Count == 0)
                     {
                         if(direct)
-                            loggerInit.Info("Initializing: " + Name + " (DIRECT)");
+                            loggerInit.LogInformation("Initializing: " + Name + " (DIRECT)");
 
                         // Not every type T desires initialization, if this type T needs none,
                         // don't consume time and resources spawning a new thread
