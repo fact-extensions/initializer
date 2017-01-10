@@ -29,7 +29,7 @@ using Castle.Core.Logging;
 using Fact.Apprentice.Configuration;
 using Microsoft.Extensions.Logging;
 
-namespace Fact.Apprentice.Core
+namespace Fact.Extensions.Initialization
 {
     /// <summary>
     /// Core loader and initializer for DLL modules.  Executed in a predictable way, starting with the most depended on DLLs and ending with the least depended on
@@ -87,12 +87,13 @@ namespace Fact.Apprentice.Core
         /// <param name="loggerGeneral"></param>
         static void _PreInitialize(ILogger logger, ILogger loggerGeneral)
         {
-
+            Initializer.logger = logger;
+            Initializer.loggerGeneral = loggerGeneral;
         }
 
         // TODO: make these readonly again asap
-        static ILogger logger = LogManager.GetLogger("Initialization");
-        static ILogger loggerGeneral = LogManager.GetCurrentClassLogger();
+        static ILogger logger = LogManager.CreateLogger("Initialier");
+        static ILogger loggerGeneral = LogManager.CreateLogger("General");
 #if FEATURE_POLICY
         static readonly IPolicyProvider policyProvider = PolicyProvider.Get();
         static readonly ExceptionPolicy exceptionPolicy = policyProvider.GetExceptionPolicy();
@@ -182,12 +183,12 @@ namespace Fact.Apprentice.Core
                 }
                 else
                 {
-                    logger.Debug("OnInitialized eventFireLocker start");
+                    logger.LogDebug("OnInitialized eventFireLocker start");
 
                     lock (eventFireLocker)
                         action(false);
 
-                    logger.Debug("OnInitialized eventFireLocker end");
+                    logger.LogDebug("OnInitialized eventFireLocker end");
                 }
             }
         }
@@ -225,13 +226,13 @@ namespace Fact.Apprentice.Core
             lock (StateChangeLocker)
             {
 #if DEBUG
-                logger.Debug("Initializer::WaitComplete phase 0 IsInitialized = " + IsInitialized);
+                logger.LogDebug("Initializer::WaitComplete phase 0 IsInitialized = " + IsInitialized);
 #endif
 
                 if (!IsInitialized)
                 {
 #if DEBUG
-                    Complete += () => logger.Debug("Initializer::WaitComplete completed");
+                    Complete += () => logger.LogDebug("Initializer::WaitComplete completed");
 #endif
                     Complete += () => evh.Set();
                 }
@@ -239,7 +240,7 @@ namespace Fact.Apprentice.Core
                     return;
 
 #if DEBUG
-                logger.Debug("Initializer::WaitComplete phase 1 IsInitialized = " + IsInitialized);
+                logger.LogDebug("Initializer::WaitComplete phase 1 IsInitialized = " + IsInitialized);
 #endif
             }
             evh.WaitOne();
@@ -254,7 +255,7 @@ namespace Fact.Apprentice.Core
         /// <param name="action">parameter is TRUE when action is deferred</param>
         public static void OnAsyncComplete(Action<bool> action)
         {
-            logger.Debug("Initializer::OnAsyncComplete StateChangeLocker start");
+            logger.LogDebug("Initializer::OnAsyncComplete StateChangeLocker start");
 
             // Ensure status checks do not change
             lock (StateChangeLocker)
@@ -265,17 +266,17 @@ namespace Fact.Apprentice.Core
                     AsyncComplete += () => action(true);
                 else
                 {
-                    logger.Debug("Initializer::OnAsyncComplete eventFireLocker start");
+                    logger.LogDebug("Initializer::OnAsyncComplete eventFireLocker start");
 
                     lock (eventFireLocker)
                         // run immediately
                         action(false);
 
-                    logger.Debug("Initializer::OnAsyncComplete eventFireLocker end");
+                    logger.LogDebug("Initializer::OnAsyncComplete eventFireLocker end");
                 }
             }
 
-            logger.Debug("Initializer::OnAsyncComplete StateChangeLocker end");
+            logger.LogDebug("Initializer::OnAsyncComplete StateChangeLocker end");
         }
 
         /// <summary>
@@ -441,13 +442,13 @@ namespace Fact.Apprentice.Core
                                 IsAsyncInitialized = true;
                             }
 
-                            logger.Debug("Initializer::Initialize eventFireLocker start");
+                            logger.LogDebug("Initializer::Initialize eventFireLocker start");
                             lock (eventFireLocker)
                             {
                                 if (AsyncComplete != null)
                                     AsyncComplete();
                             }
-                            logger.Debug("Initializer::Initialize eventFireLocker end");
+                            logger.LogDebug("Initializer::Initialize eventFireLocker end");
                         };
 
                         lock (stateChangeLocker)
@@ -579,13 +580,13 @@ namespace Fact.Apprentice.Core
                 IsInitializedEventFiring = true;
             }
 
-            logger.Debug("Initializer::SetInitialized eventFireLocker start");
+            logger.LogDebug("Initializer::SetInitialized eventFireLocker start");
             lock (eventFireLocker)
             {
                 if (Complete != null)
                     Complete();
             }
-            logger.Debug("Initializer::SetInitialized eventFireLocker end");
+            logger.LogDebug("Initializer::SetInitialized eventFireLocker end");
 
             lock (StateChangeLocker)
                 IsInitializedEventFiring = false;

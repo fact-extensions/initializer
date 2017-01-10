@@ -14,11 +14,14 @@
 
 
   "dependencies": {
-    "Microsoft.Extensions.Logging.Abstractions": "1.0.1"
+    "Microsoft.Extensions.Logging.Abstractions": "1.0.1",
+    "Microsoft.Extensions.DependencyInjection.Abstractions": "1.0.1"
     //"Fact.Extensions.Collection": "1.0.0-alpha016"
   },
 
   "frameworks": {
+    /*
+    Not yet friendly for 1.3 because of eventwaithandle usage
     "netstandard1.3": {
       "buildOptions": {
         "define": [
@@ -33,7 +36,7 @@
         //"System.Threading.Tasks.Parallel": "4.0.1"
       }
       //"imports": "dnxcore50"
-    },
+    }, */
     "netstandard1.6": {
       "buildOptions": {
         "define": [
