@@ -1,0 +1,43 @@
+obj/
+bin/
+
+*.suo
+*.user
+
+#mono stuff
+*.userprefs
+*.pidb
+*.psess
+# any gtk-gui/generated.cs will be ignored
+**/gtk-gui/*.cs
+
+*.pfx
+#*.resx
+*.resources
+*.template
+#*.config
+# actually we want most text files
+#*.txt
+#*.targets
+
+# Mac stuff
+.DS_Store
+
+# Emacs stuff
+*~
+
+
+*.testrunconfig
+*.vsmdi
+*.unused
+bkp.git
+/*.patch
+app_tracelog.svclog
+app_messages.svclog
+
+#VS2015-ish stuff
+# seems to be some kind of meta/tempfiles
+**/*.sln.ide/
+src/**/.vs/
+
+project.lock.json
