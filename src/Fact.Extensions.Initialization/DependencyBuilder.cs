@@ -131,6 +131,8 @@ namespace Fact.Extensions.Initialization
             {
                 node = CreateNode(key);
 
+                InitializeFromNode(node);
+
                 NodeCreated?.Invoke(node);
 
                 node.Start();
@@ -143,7 +145,15 @@ namespace Fact.Extensions.Initialization
 
 
         /// <summary>
-        /// Factory method for Items (nodes)
+        /// Node creation will in turn sometimes require a DependencyBuilder-level code to 
+        /// respond or configure something.  Do that here
+        /// </summary>
+        /// <param name="node"></param>
+        protected virtual void InitializeFromNode(Node node) { }
+
+
+        /// <summary>
+        /// Factory method to create a Node specific to this type of DependencyBuilder
         /// </summary>
         /// <param name="key"></param>
         /// <returns></returns>

@@ -31,48 +31,10 @@ namespace Fact.Extensions.Initialization
         }
 
 
-        /// <summary>
-        /// Participate during Node construction to initialize first (root) item, if necessary
-        /// </summary>
-        /// <param name="obj"></param>
-        void InitializeRoot(Node obj)
-        {
-            // First node that is created is the root node
-            if (rootNode == null)
-            {
-                rootNode = (Node)obj;
-                // FIX: outside events latch on to initialized *after* this InitializeRoot is called, meaning other folks will be notified
-                // of assembly init AFTER global Complete event fires via rootNode.  
-                // Not a killer, but incorrect and needs fixing
-                rootNode.Initialized += node => Completed?.Invoke();
-                rootNode.DigEnded += node =>
-                {
-                    DigChildren(node, assemblyList.Result);
-
-                    // this is to indicate that the rootNode specifically has been dug, and to wake up any waiting
-                    // initializers - since we have to wait for all digs to finish before we can actually begin
-                    // initialization (because digs are what kick off IAsyncLoaders)
-                    rootNodeEvh.Set();
-                };
-            }
-        }
-
-        Node rootNode;
-
-        /// <summary>
-        /// Set when dug has completed
-        /// </summary>
-        EventWaitHandle rootNodeEvh = new EventWaitHandle(false, EventResetMode.ManualReset);
-
         protected override DependencyBuilder<Assembly>.Node CreateNode(Assembly key)
         {
             return new Node(key, this);
         }
-
-        /// <summary>
-        /// Represents set of assembly nodes which are initializing asynchronously
-        /// </summary>
-		HashSet<Node> AsyncInitializing = new HashSet<Node>();
 
         /// <summary>
         /// First in last out buffer for shutdown
@@ -98,11 +60,6 @@ namespace Fact.Extensions.Initialization
             }
         }
 
-        /// <summary>
-        /// Fired when total initialization has completed
-        /// </summary>
-        public event Action Completed;
-
         public new class Node : InitializingAsyncDependencyBuilder<Assembly>.Node
         {
             AssemblyDependencyBuilder_NEW parent;
@@ -118,7 +75,7 @@ namespace Fact.Extensions.Initialization
                     if (parent.rootNode == this)
                         return true;
 
-                    if (loader is ILoader || loader is ILoaderAsync)
+                    if (ShouldInitialize || IsAsync)
                         return true;
 
                     return false;
@@ -218,8 +175,11 @@ namespace Fact.Extensions.Initialization
             public Node(Assembly key, AssemblyDependencyBuilder_NEW parent) : base(key)
             {
                 this.parent = parent;
+                //key.DefinedTypes.AsParallel(); // PLINQ mainly advantageous for expensive selectors, not necessarily
+                // expensive initial enum producers
+                // this "loaders" phase is a potential bottleneck
+                var loaders = key.DefinedTypes.Where(x => x.ImplementedInterfaces.Contains(typeof(ILoader))).ToArray();
                 loader = key.CreateInstance("Fact._Global.Loader");
-                parent.InitializeRoot(this);
                 /*			
 	                // If this isn't an init/shutdown participating assembly, add it to an exclude cache so that next
 				// time we startup we don't bother with it
@@ -247,7 +207,7 @@ namespace Fact.Extensions.Initialization
             }
 
 
-            public override string Name { get { return value.GetName().Name; } }
+            public override string Name => value.GetName().Name;
 
             public override IEnumerable<Assembly> GetChildren()
             {
@@ -270,9 +230,6 @@ namespace Fact.Extensions.Initialization
             }
         }
 
-        protected override object GetKey(Assembly key)
-        {
-            return key.FullName;
-        }
+        protected override object GetKey(Assembly key) => key.FullName;
     }
 }

@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Fact.Extensions.Initialization
@@ -62,6 +63,72 @@ namespace Fact.Extensions.Initialization
                 AsyncInitializing.Remove(node);
             }
         }
+
+
+        /// <summary>
+        /// Hangs off InitializeFromNode and is called once upon startup initialization of 
+        /// root node
+        /// </summary>
+        /// <param name="node"></param>
+        protected virtual void InitializeFromRootNode(Node rootNode)
+        {
+            // FIX: outside events latch on to initialized *after* this InitializeRoot is called, meaning other folks will be notified
+            // of assembly init AFTER global Complete event fires via rootNode.  
+            // Not a killer, but incorrect and needs fixing
+            rootNode.Initialized += n => Completed?.Invoke();
+            rootNode.DigEnded += n =>
+            {
+                // If memory services this explicit DigChildren was to do a sweep on every assembly 
+                // because some didn't fall under the hierarchy.  Perhaps for plugins?  Can't remember
+                // tricky to make work, so commenting it out until I remember what it's for
+                //DigChildren(node, assemblyList.Result);
+
+                // this is to indicate that the rootNode specifically has been dug, and to wake up any waiting
+                // initializers - since we have to wait for all digs to finish before we can actually begin
+                // initialization (because digs are what kick off IAsyncLoaders)
+                rootNodeEvh.Set();
+            };
+        }
+
+
+        // NOTE: this should actually live in InitializingDependencyBuilder, we're leaving it out while refactoring
+        // so as to not break existing AssemblyDependencyBuilder
+        #region Belongs in InitializingDependencyBuilder
+        /// <summary>
+        /// Set when dug has completed
+        /// </summary>
+        protected EventWaitHandle rootNodeEvh = new EventWaitHandle(false, EventResetMode.ManualReset);
+
+
+        protected Node rootNode;
+
+
+        /// <summary>
+        /// Fired when total initialization has completed
+        /// </summary>
+        public event Action Completed;
+
+        /// <summary>
+        /// Participate during Node construction to initialize first (root) item, if necessary
+        /// </summary>
+        /// <param name="obj"></param>
+        /// <remarks>
+        /// NOTE: this should actually live in InitializingDependencyBuilder, we're leaving it out while refactoring
+        /// so as to not break existing AssemblyDependencyBuilder
+        /// </remarks>
+        protected override void InitializeFromNode(DependencyBuilder<T>.Node node)
+        {
+            // First node that is created is the root node
+            if (rootNode == null)
+            {
+                // FIX: some fragility, if Node type deviates from what we expect in our class hierarchy
+                // changing this to an interface-based approach would help a litte
+                rootNode = (Node)node;
+                InitializeFromRootNode(rootNode);
+            }
+        }
+
+        #endregion
 
 
         /// <summary>
