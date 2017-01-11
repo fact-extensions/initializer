@@ -1,4 +1,6 @@
-﻿using System;
+﻿#define FEATURE_MULTILOADER
+
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
@@ -54,16 +56,28 @@ namespace Fact.Extensions.Initialization
         {
             foreach (var item in FILO)
             {
-                loggerInit.LogInformation("Shutdown for assembly: " +
-                    item.loader.GetType().GetTypeInfo().Assembly.FullName);
-                ((ILoaderShutdown)item.loader).Shutdown();
+#if FEATURE_MULTILOADER
+                foreach (var loader in item.loaders)
+                {
+#else
+                {
+                    loader = item.loader;
+#endif
+                    loggerInit.LogInformation("Shutdown for assembly: " +
+                    loader.GetType().GetTypeInfo().Assembly.FullName);
+                    ((ILoaderShutdown)loader).Shutdown();
+                }
             }
         }
 
         public new class Node : InitializingAsyncDependencyBuilder<Assembly>.Node
         {
             AssemblyDependencyBuilder_NEW parent;
+#if FEATURE_MULTILOADER
+            internal readonly IEnumerable<object> loaders;
+#else
             internal readonly object loader;
+#endif
 
             /// <summary>
             /// This item/assembly only should be dug into if it is either a rootnode OR it has loader code
@@ -86,7 +100,14 @@ namespace Fact.Extensions.Initialization
             {
                 get
                 {
+#if FEATURE_MULTILOADER
+                    // We already filter by ILoader but old flavor of AssemblyDependencyBuilder could actually handle
+                    // standalone ILoaderAsync or ILoaderShutdown, so be explicit here in anticipation of bringing that functionality
+                    // back
+                    var hasLoader = loaders.OfType<ILoader>().Any();
+#else
                     var hasLoader = loader is ILoader;
+#endif
 
                     loggerInit.LogInformation("Inspecting: " + Name + (hasLoader ? " (has loader)" : ""));
 
@@ -151,22 +172,29 @@ namespace Fact.Extensions.Initialization
 
             protected override void Initialize()
             {
-                try
+#if FEATURE_MULTILOADER
+                foreach (var loader in loaders.OfType<ILoader>())
                 {
-                    ((ILoader)loader).Initialize();
-                }
-                catch (TypeLoadException tle)
+#else
                 {
-                    loggerInit.LogError("Initializing: " + Name + " failed.  Could not load assembly because " + tle.TypeName + " could not be loaded");
-                    throw new TypeLoadException("Could not initialize Assembly " + Name + " because "
-                        + tle.TypeName + " could not be loaded", tle);
-                }
-                catch (Exception e)
-                {
-                    // TODO: bring this back, useful to have the deep stack tracing
-                    //loggerInit.ErrorWithInspection("Initializing: " + Name + " failed.", e);
-                    loggerInit.LogError("Initializing: " + Name + " failed.", e);
-                    throw new InvalidOperationException("Could not initialize: " + Name, e);
+#endif
+                    try
+                    {
+                        ((ILoader)loader).Initialize();
+                    }
+                    catch (TypeLoadException tle)
+                    {
+                        loggerInit.LogError("Initializing: " + Name + " failed.  Could not load assembly because " + tle.TypeName + " could not be loaded");
+                        throw new TypeLoadException("Could not initialize Assembly " + Name + " because "
+                            + tle.TypeName + " could not be loaded", tle);
+                    }
+                    catch (Exception e)
+                    {
+                        // TODO: bring this back, useful to have the deep stack tracing
+                        //loggerInit.ErrorWithInspection("Initializing: " + Name + " failed.", e);
+                        loggerInit.LogError("Initializing: " + Name + " failed.", e);
+                        throw new InvalidOperationException("Could not initialize: " + Name, e);
+                    }
                 }
 
                 loggerInit.LogInformation("Initialized: " + Name);
@@ -175,11 +203,16 @@ namespace Fact.Extensions.Initialization
             public Node(Assembly key, AssemblyDependencyBuilder_NEW parent) : base(key)
             {
                 this.parent = parent;
+
+#if FEATURE_MULTILOADER
                 //key.DefinedTypes.AsParallel(); // PLINQ mainly advantageous for expensive selectors, not necessarily
                 // expensive initial enum producers
                 // this "loaders" phase is a potential bottleneck
-                var loaders = key.DefinedTypes.Where(x => x.ImplementedInterfaces.Contains(typeof(ILoader))).ToArray();
+                var _loaders = key.DefinedTypes.Where(x => x.ImplementedInterfaces.Contains(typeof(ILoader)));
+                loaders = _loaders.Select(x => Activator.CreateInstance(x.AsType())).ToArray();
+#else
                 loader = key.CreateInstance("Fact._Global.Loader");
+#endif
                 /*			
 	                // If this isn't an init/shutdown participating assembly, add it to an exclude cache so that next
 				// time we startup we don't bother with it
@@ -187,7 +220,11 @@ namespace Fact.Extensions.Initialization
 				{
 
 				}*/
+#if FEATURE_MULTILOADER
+                if (loaders.OfType<ILoaderShutdown>().Any())
+#else
                 if (loader is ILoaderShutdown)
+#endif
                 {
                     Initialized += item =>
                     {
@@ -199,12 +236,22 @@ namespace Fact.Extensions.Initialization
                 }
             }
 
+#if FEATURE_MULTILOADER
+            public override bool IsAsync => loaders.OfType<ILoaderAsync>().Any();
+
+            protected override void DoAsyncLoad()
+            {
+                foreach (var loader in loaders.OfType<ILoaderAsync>())
+                    loader.Load();
+            }
+#else
             public override bool IsAsync => loader is ILoaderAsync;
 
             protected override void DoAsyncLoad()
             {
                 ((ILoaderAsync)loader).Load();
             }
+#endif
 
 
             public override string Name => value.GetName().Name;
