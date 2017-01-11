@@ -293,30 +293,30 @@ namespace Fact.Extensions.Initialization
         /// <summary>
         /// This class represents a node in the dependency tree
         /// </summary>
-        public abstract class Item
+        public abstract class Node
         {
             public T value;
 
-            LinkedList<Item> children = new LinkedList<Item>();
-            LinkedList<Item> parents = new LinkedList<Item>();
+            LinkedList<Node> children = new LinkedList<Node>();
+            LinkedList<Node> parents = new LinkedList<Node>();
 
-            public IEnumerable<Item> Children { get { return children; } }
-            public IEnumerable<Item> Parents { get { return parents; }}
+            public IEnumerable<Node> Children { get { return children; } }
+            public IEnumerable<Node> Parents { get { return parents; }}
 
             /// <summary>
             /// Occurs when child is initially added, but before it is itself dug into
             /// </summary>
-            public event Action<Item> ChildAdded;
-            public event Action<Item> ParentAdded;
+            public event Action<Node> ChildAdded;
+            public event Action<Node> ParentAdded;
 
             /// <summary>
             /// When the dig phase for this item ends, fire this
             /// End of dig phase should have children and parents
             /// fully built out
             /// </summary>
-            public event Action<Item> DigEnded;
+            public event Action<Node> DigEnded;
 
-            public void AddChild(Item child)
+            public void AddChild(Node child)
             {
                 children.AddLast(child);
 
@@ -325,7 +325,7 @@ namespace Fact.Extensions.Initialization
             }
 
 
-            public void AddParent(Item parent)
+            public void AddParent(Node parent)
             {
                 parents.AddLast(parent);
 
@@ -353,13 +353,13 @@ namespace Fact.Extensions.Initialization
             public virtual bool ShouldDig { get { return true; } }
         }
 
-        Dictionary<object, Item> lookup = new Dictionary<object, Item>();
+        Dictionary<object, Node> lookup = new Dictionary<object, Node>();
         HashSet<T> alreadyInspected = new HashSet<T>();
 
         /// <summary>
         /// Fired right when an item gets created, before any Dig processing occurs
         /// </summary>
-        public event Action<Item> ItemCreated;
+        public event Action<Node> ItemCreated;
 
         /// <summary>
         /// Key mangler.  Sometimes the default key type T is not suitable for doing lookups
@@ -381,9 +381,9 @@ namespace Fact.Extensions.Initialization
         /// </summary>
         /// <param name="key"></param>
         /// <returns></returns>
-        protected Item GetValue(T key)
+        protected Node GetValue(T key)
         {
-            Item item;
+            Node item;
             object _key = GetKey(key);
 
             if(!lookup.TryGetValue(_key, out item))
@@ -408,14 +408,14 @@ namespace Fact.Extensions.Initialization
         /// </summary>
         /// <param name="key"></param>
         /// <returns></returns>
-        protected abstract Item CreateItem(T key);
+        protected abstract Node CreateItem(T key);
 
         /// <summary>
         /// Low level dig method, for internal/reuse
         /// </summary>
         /// <param name="value"></param>
         /// <param name="item"></param>
-        protected void Dig(Item item, T value, IEnumerable<T> children)
+        protected void Dig(Node item, T value, IEnumerable<T> children)
         {
             foreach (var child in children)
             {
@@ -433,7 +433,7 @@ namespace Fact.Extensions.Initialization
         /// Dig all the way to the bottom, then build from the bottom up
         /// </summary>
         /// <param name="value"></param>
-        public Item Dig(T value, T parent)
+        public Node Dig(T value, T parent)
         {
             // FIX: kludgey
             alreadyInspected.Add(parent);
@@ -484,13 +484,13 @@ namespace Fact.Extensions.Initialization
         }
     }
 
-    public abstract class _DependencyBuilderItem<T> : DependencyBuilder<T>.Item
+    public abstract class DependencyBuilderNode<T> : DependencyBuilder<T>.Node
     {
         public abstract class Meta
         {
-            public HashSet<_DependencyBuilderItem<T>> Dependencies = new HashSet<_DependencyBuilderItem<T>>();
+            public HashSet<DependencyBuilderNode<T>> Dependencies = new HashSet<DependencyBuilderNode<T>>();
             public bool IsSatisfied;
-            public readonly _DependencyBuilderItem<T> Item;
+            public readonly DependencyBuilderNode<T> Item;
 
             /// <summary>
             /// This is the core method to Satisfy any underlying dependencies
@@ -549,7 +549,7 @@ namespace Fact.Extensions.Initialization
 
             public readonly string Key;
 
-            public Meta(string key, _DependencyBuilderItem<T> item) 
+            public Meta(string key, DependencyBuilderNode<T> item) 
             {
                 Key = key; 
                 Item = item; 
@@ -560,9 +560,9 @@ namespace Fact.Extensions.Initialization
             /// TODO: Document what this method does
             /// </summary>
             /// <param name="_item"></param>
-            public void Handler(DependencyBuilder<T>.Item _item)
+            public void Handler(DependencyBuilder<T>.Node _item)
             {
-                var item = (_DependencyBuilderItem<T>)_item; 
+                var item = (DependencyBuilderNode<T>)_item; 
                 var itemMeta = item.Dependencies[Key];
 
                 // If _item has not satisfied its own dependencies, then
@@ -595,9 +595,9 @@ namespace Fact.Extensions.Initialization
     }
 
 
-    public abstract class ChildSyncMeta<T> : _DependencyBuilderItem<T>.Meta
+    public abstract class ChildSyncMeta<T> : DependencyBuilderNode<T>.Meta
     {
-        public ChildSyncMeta(string key, _DependencyBuilderItem<T> item) :
+        public ChildSyncMeta(string key, DependencyBuilderNode<T> item) :
             base(key, item)
         {
             // when child is added, register child as something this item depends on
@@ -611,9 +611,9 @@ namespace Fact.Extensions.Initialization
     }
 
 
-    public abstract class ChildAsyncMeta<T> : _DependencyBuilderItem<T>.Meta
+    public abstract class ChildAsyncMeta<T> : DependencyBuilderNode<T>.Meta
     {
-        public ChildAsyncMeta(string key, _DependencyBuilderItem<T> item) :
+        public ChildAsyncMeta(string key, DependencyBuilderNode<T> item) :
             base(key, item)
         {
             // when child is added, register child as something this item depends on
@@ -625,7 +625,7 @@ namespace Fact.Extensions.Initialization
             item.DigEnded += HandleDigEnded;
         }
 
-        void HandleDigEnded (DependencyBuilder<T>.Item obj)
+        void HandleDigEnded (DependencyBuilder<T>.Node obj)
         {
             
         }
@@ -643,7 +643,7 @@ namespace Fact.Extensions.Initialization
                 // until the end of the dig but don't want to wait until the end of the dig
                 Dependencies.Add(Item);
 
-				var children = Item.Children as ICollection<DependencyBuilder<T>.Item>;
+				var children = Item.Children as ICollection<DependencyBuilder<T>.Node>;
 				var count = children == null ? Item.Children.Count() : children.Count;
 
                 // If we reach the same number of dependencies accumulated as children AND we are
@@ -763,7 +763,7 @@ namespace Fact.Extensions.Initialization
     }
 #endif
 
-    public abstract class UninitializingItem<T> : _DependencyBuilderItem<T>
+    public abstract class UninitializingItem<T> : DependencyBuilderNode<T>
     {
         HashSet<UninitializingItem<T>> ParentUninitialized = new HashSet<UninitializingItem<T>>();
 
@@ -803,7 +803,7 @@ namespace Fact.Extensions.Initialization
                 }
             }
 
-            public UninitializeMeta(string key, _DependencyBuilderItem<T> item) : base(key, item) 
+            public UninitializeMeta(string key, DependencyBuilderNode<T> item) : base(key, item) 
             {
                 //item.ParentAdded += Handler;
             }
@@ -950,7 +950,7 @@ namespace Fact.Extensions.Initialization
 
         //internal static readonly TaskFactory taskFactory = Task.Factory;
 
-        new abstract public class Item : _DependencyBuilderItem<T>
+        new abstract public class Node : DependencyBuilderNode<T>
         {
 
             public bool IsInitialized
@@ -961,11 +961,11 @@ namespace Fact.Extensions.Initialization
 
             public abstract string Name { get; }
 
-            public Item()
+            public Node()
             {
                 ChildAdded += child =>
                 {
-                    var _child = (Item)child;
+                    var _child = (Node)child;
 
                     // if child is uninitialized, then be sure to add this to the uninitialized
                     // list for this item
@@ -984,7 +984,7 @@ namespace Fact.Extensions.Initialization
                     };
                 };
 
-                DigEnded += Item_DigEnded;
+                DigEnded += Node_DigEnded;
             }
 
             bool dug;
@@ -1081,7 +1081,7 @@ namespace Fact.Extensions.Initialization
             /// because all children are initialized, then initialize the node.
             /// </summary>
             /// <param name="obj"></param>
-            void Item_DigEnded(DependencyBuilder<T>.Item obj)
+            void Node_DigEnded(DependencyBuilder<T>.Node obj)
             {
                 dug = true;
 
@@ -1096,12 +1096,12 @@ namespace Fact.Extensions.Initialization
             /// <summary>
             /// List of children still requiring initialization
             /// </summary>
-            public HashSet<Item> ChildrenUninitialized = new HashSet<Item>();
+            public HashSet<Node> ChildrenUninitialized = new HashSet<Node>();
 
             /// <summary>
             /// Fired when this particular item and its T finishes initializing
             /// </summary>
-            public event Action<Item> Initialized;
+            public event Action<Node> Initialized;
         }
     }
 

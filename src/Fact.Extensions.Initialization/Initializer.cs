@@ -400,7 +400,7 @@ namespace Fact.Extensions.Initialization
 
                         db.ItemCreated += _item =>
                         {
-                            var item = (AssemblyDependencyBuilder._Item) _item;
+                            var item = (AssemblyDependencyBuilder.Node) _item;
 
                             item.InitBegin += __item =>
                             {
@@ -968,15 +968,15 @@ namespace Fact.Extensions.Initialization
 		public bool IsAsyncInitialized { get; set; }
 
 		/// <summary>
-		/// Participate during _Item construction to initialize first (root) item, if necessary
+		/// Participate during Node construction to initialize first (root) item, if necessary
 		/// </summary>
 		/// <param name="obj"></param>
-		void InitializeRoot(_Item obj)
+		void InitializeRoot(Node obj)
 		{
 			// First node that is created is the root node
 			if (rootNode == null)
 			{
-				rootNode = (_Item)obj;
+				rootNode = (Node)obj;
 				// FIX: outside events latch on to initialized *after* this InitializeRoot is called, meaning other folks will be notified
 				// of assembly init AFTER global Complete event fires via rootNode.  
                 // Not a killer, but incorrect and needs fixing
@@ -1007,24 +1007,24 @@ namespace Fact.Extensions.Initialization
 			}
 		}
 
-		_Item rootNode;
+		Node rootNode;
 
 		/// <summary>
 		/// Set when dug has completed
 		/// </summary>
 		EventWaitHandle rootNodeEvh = new EventWaitHandle(false, EventResetMode.ManualReset);
 
-		protected override DependencyBuilder<Assembly>.Item CreateItem(Assembly key)
+		protected override DependencyBuilder<Assembly>.Node CreateItem(Assembly key)
 		{
-			return new _Item(key, this);
+			return new Node(key, this);
 		}
 
-		HashSet<_Item> AsyncInitializing = new HashSet<_Item>();
+		HashSet<Node> AsyncInitializing = new HashSet<Node>();
 
 		/// <summary>
 		/// First in last out buffer for shutdown
 		/// </summary>
-		LinkedList<_Item> FILO = new LinkedList<_Item>();
+		LinkedList<Node> FILO = new LinkedList<Node>();
 
 		/// <summary>
 		/// 
@@ -1056,7 +1056,7 @@ namespace Fact.Extensions.Initialization
 		/// </summary>
 		public event Action AsyncCompleted;
 
-		public class _Item : Item
+		public new class Node : InitializingDependencyBuilder<Assembly>.Node
 		{
 			AssemblyDependencyBuilder parent;
 			internal readonly object loader;
@@ -1201,7 +1201,7 @@ namespace Fact.Extensions.Initialization
 				if (InitBegin != null)
 					InitBegin(this);
 
-				loggerInit.LogInformation("Initializing: " + Name + ": " + Children.Cast<Item>().
+				loggerInit.LogInformation("Initializing: " + Name + ": " + Children.Cast<Node>().
 					Select(x => x.Name + (x.IsInitialized ? " " : " not ") + "initialized").
 					ToString(", "));
 
@@ -1226,7 +1226,7 @@ namespace Fact.Extensions.Initialization
 				loggerInit.LogInformation("Initialized: " + Name);
 			}
 
-			public _Item(Assembly key, AssemblyDependencyBuilder parent) 
+			public Node(Assembly key, AssemblyDependencyBuilder parent) 
 			{
 				this.parent = parent;
 				loader = key.CreateInstance("Fact._Global.Loader");
@@ -1301,16 +1301,16 @@ namespace Fact.Extensions.Initialization
 			/// These differenciate from "Initialized" event because this InitBegin specifically fires *AFTER* AsyncEnd, and
 			/// also this InitEnd fires *BEFORE* Completed
 			/// </remarks>
-			public event Action<_Item> InitBegin;
+			public event Action<Node> InitBegin;
 
 			/// <summary>
 			/// Called when ILoaderAsync portion begins
 			/// </summary>
-			public event Action<_Item> AsyncBegin;
+			public event Action<Node> AsyncBegin;
 			/// <summary>
 			/// Called when ILoaderAsync portion is complete
 			/// </summary>
-			public event Action<_Item> AsyncEnd;
+			public event Action<Node> AsyncEnd;
 
 			Task loaderAsyncTask;
 
