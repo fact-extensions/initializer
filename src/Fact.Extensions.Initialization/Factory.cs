@@ -295,7 +295,12 @@ namespace Fact.Extensions.Initialization
         /// </summary>
         public abstract class Node
         {
-            public T value;
+            readonly public T value;
+
+            public Node(T value)
+            {
+                this.value = value;
+            }
 
             LinkedList<Node> children = new LinkedList<Node>();
             LinkedList<Node> parents = new LinkedList<Node>();
@@ -304,7 +309,7 @@ namespace Fact.Extensions.Initialization
             public IEnumerable<Node> Parents { get { return parents; }}
 
             /// <summary>
-            /// Occurs when child is initially added, but before it is itself dug into
+            /// Occurs when child is initially added to this node, but before it is itself dug into
             /// </summary>
             public event Action<Node> ChildAdded;
             public event Action<Node> ParentAdded;
@@ -354,12 +359,17 @@ namespace Fact.Extensions.Initialization
         }
 
         Dictionary<object, Node> lookup = new Dictionary<object, Node>();
+
+        /// <summary>
+        /// Denotes which nodes have already been inspected, and won't dig into them
+        /// if they are encountered again in the tree
+        /// </summary>
         HashSet<T> alreadyInspected = new HashSet<T>();
 
         /// <summary>
-        /// Fired right when an item gets created, before any Dig processing occurs
+        /// Fired right when an item gets created, before any Dig or Start processing occurs
         /// </summary>
-        public event Action<Node> ItemCreated;
+        public event Action<Node> NodeCreated;
 
         /// <summary>
         /// Key mangler.  Sometimes the default key type T is not suitable for doing lookups
@@ -376,30 +386,28 @@ namespace Fact.Extensions.Initialization
         }
 
         /// <summary>
-        /// Acquires the already-existing Item for the dependency graph,
+        /// Acquires the already-existing Node for the dependency graph,
         /// otherwise creates it and tracks it for next time
         /// </summary>
         /// <param name="key"></param>
         /// <returns></returns>
         protected Node GetValue(T key)
         {
-            Node item;
+            Node node;
             object _key = GetKey(key);
 
-            if(!lookup.TryGetValue(_key, out item))
+            if(!lookup.TryGetValue(_key, out node))
             {
-                item = CreateItem(key);
-                item.value = key;
+                node = CreateNode(key);
 
-                if (ItemCreated != null)
-                    ItemCreated(item);
+                NodeCreated?.Invoke(node);
 
-                item.Start();
+                node.Start();
 
-                lookup.Add(_key, item);
+                lookup.Add(_key, node);
             }
 
-            return item;
+            return node;
         }
 
 
@@ -408,23 +416,27 @@ namespace Fact.Extensions.Initialization
         /// </summary>
         /// <param name="key"></param>
         /// <returns></returns>
-        protected abstract Node CreateItem(T key);
+        protected abstract Node CreateNode(T key);
 
         /// <summary>
+        /// Dig into children, recursively calling Dig(T)
         /// Low level dig method, for internal/reuse
         /// </summary>
-        /// <param name="value"></param>
-        /// <param name="item"></param>
-        protected void Dig(Node item, T value, IEnumerable<T> children)
+        /// <param name="current"></param>
+        /// <param name="node"></param>
+        protected void DigChildren(Node node, IEnumerable<T> children)
         {
             foreach (var child in children)
             {
-                var childItem = GetValue(child);
+                var childNode = GetValue(child);
 
-                if (childItem.ShouldDig)
+                // each child is queried to see if we should dig further into it
+                if (childNode.ShouldDig)
                 {
-                    item.AddChild(childItem);
-                    Dig(child, value);
+                    // track that this node indeed has a child of dig interest, and
+                    // fire any listening callbacks as well
+                    node.AddChild(childNode);
+                    Dig(child, node.value);
                 }
             }
         }
@@ -432,49 +444,38 @@ namespace Fact.Extensions.Initialization
         /// <summary>
         /// Dig all the way to the bottom, then build from the bottom up
         /// </summary>
-        /// <param name="value"></param>
-        public Node Dig(T value, T parent)
+        /// <param name="current"></param>
+        public Node Dig(T current, T parent)
         {
             // FIX: kludgey
             alreadyInspected.Add(parent);
 
-            var item = GetValue(value);
+            var node = GetValue(current);
 
             if (parent != null)
-                item.AddParent(GetValue(parent));
+                node.AddParent(GetValue(parent));
 
-            if (alreadyInspected.Contains(value))
-                return item;
+            if (alreadyInspected.Contains(current))
+                return node;
 
             try
             {
-                var children = item.GetChildren();
+                var children = node.GetChildren();
 #if DEBUG
                 children = children.ToArray();
 #endif
-                Dig(item, value, children);
-                /*
-                foreach (var child in item.GetChildren())
-                {
-                    var childItem = GetValue(child);
-
-                    if (childItem.ShouldDig)
-                    {
-                        item.AddChild(childItem);
-                        Dig(child, value);
-                    }
-                }*/
+                DigChildren(node, children);
             }
             catch(Exception e)
             {
-                logger.LogDebug("DependencyBuilder::Dig failure on inspecting children of: " + RetrieveDescription(value));
+                logger.LogDebug("DependencyBuilder::Dig failure on inspecting children of: " + RetrieveDescription(current));
                 logger.LogDebug("DependencyBuilder::Dig exception: " + e.Message);
                 throw;
             }
 
-            alreadyInspected.Add(value);
-            item.DoDigEnded();
-            return item;
+            alreadyInspected.Add(current);
+            node.DoDigEnded();
+            return node;
         }
 
 
@@ -486,6 +487,8 @@ namespace Fact.Extensions.Initialization
 
     public abstract class DependencyBuilderNode<T> : DependencyBuilder<T>.Node
     {
+        public DependencyBuilderNode(T value) : base(value) { }
+
         public abstract class Meta
         {
             public HashSet<DependencyBuilderNode<T>> Dependencies = new HashSet<DependencyBuilderNode<T>>();
@@ -809,7 +812,7 @@ namespace Fact.Extensions.Initialization
             }
         }
 
-        public UninitializingItem()
+        public UninitializingItem(T value) : base(value)
         {
             // handler for uninitialization is created and registered
             var uninitializeMeta = new UninitializeMeta ("parent", this);
@@ -889,6 +892,11 @@ namespace Fact.Extensions.Initialization
     /// Initialization is managed in such a way where multiple nodes may initialize at once, so long
     /// as no dependency collision occurs
     /// </summary>
+    /// <remarks>
+    /// Formal initialization phase does not begin until full Dig has completed
+    /// Derived classes may augment this with an informal init phase of their own, such as an async
+    /// init phase kicked off per Node discovered
+    /// </remarks>
     /// <typeparam name="T"></typeparam>
     public abstract class InitializingDependencyBuilder<T> : DependencyBuilder<T>
     {
@@ -961,7 +969,7 @@ namespace Fact.Extensions.Initialization
 
             public abstract string Name { get; }
 
-            public Node()
+            public Node(T value) : base(value)
             {
                 ChildAdded += child =>
                 {
@@ -1059,7 +1067,7 @@ namespace Fact.Extensions.Initialization
 
             /// <summary>
             /// Before Initialize() is called, there may be dependencies this
-            /// Item is waiting on.  This method performs this task, and fires
+            /// Node is waiting on.  This method performs this task, and fires
             /// off any relevant "dependencies completed" events as well
             /// 
             /// Remember not all items receive an Initialize() call, but these
@@ -1069,6 +1077,7 @@ namespace Fact.Extensions.Initialization
             protected virtual void WaitForDependencies() { }
 
             /// <summary>
+            /// Perform initialization of this node.
             /// Called when all children are fully initialized
             /// </summary>
             protected abstract void Initialize();
@@ -1099,7 +1108,7 @@ namespace Fact.Extensions.Initialization
             public HashSet<Node> ChildrenUninitialized = new HashSet<Node>();
 
             /// <summary>
-            /// Fired when this particular item and its T finishes initializing
+            /// Fired when this particular node and its T finishes initializing
             /// </summary>
             public event Action<Node> Initialized;
         }
@@ -1292,4 +1301,4 @@ namespace Fact.Extensions.Initialization
         }
     }
 #endif
-    }
+}

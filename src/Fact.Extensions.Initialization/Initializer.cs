@@ -398,34 +398,34 @@ namespace Fact.Extensions.Initialization
 
                         db = new AssemblyDependencyBuilder(assemblyListTask);
 
-                        db.ItemCreated += _item =>
+                        db.NodeCreated += _item =>
                         {
-                            var item = (AssemblyDependencyBuilder.Node) _item;
+                            var node = (AssemblyDependencyBuilder.Node) _item;
 
-                            item.InitBegin += __item =>
+                            node.InitBegin += __item =>
                             {
                                 if (AssemblyInitBegin != null)
-                                    AssemblyInitBegin(item.value);
+                                    AssemblyInitBegin(node.value);
                             };
 
-                            item.Initialized += __item =>
+                            node.Initialized += __item =>
                             {
                                 if (AssemblyInitComplete != null)
-                                    AssemblyInitComplete(item.value);
+                                    AssemblyInitComplete(node.value);
 
                                 loaded.AddLast(__item.value);
                             };
 
-                            item.AsyncBegin += __item =>
+                            node.AsyncBegin += __item =>
                             {
                                 if (AssemblyAsyncBegin != null)
-                                    AssemblyAsyncBegin(item.value);
+                                    AssemblyAsyncBegin(node.value);
                             };
 
-                            item.AsyncEnd += __item =>
+                            node.AsyncEnd += __item =>
                             {
                                 if (AssemblyAsyncComplete != null)
-                                    AssemblyAsyncComplete(item.value);
+                                    AssemblyAsyncComplete(node.value);
                             };
                         };
 
@@ -965,7 +965,7 @@ namespace Fact.Extensions.Initialization
 		}
 
 
-		public bool IsAsyncInitialized { get; set; }
+		public bool IsAsyncInitialized { get; internal set; }
 
 		/// <summary>
 		/// Participate during Node construction to initialize first (root) item, if necessary
@@ -987,17 +987,9 @@ namespace Fact.Extensions.Initialization
 					if (Completed != null)
 						Completed();
 				};
-				rootNode.DigEnded += item =>
+				rootNode.DigEnded += node =>
 				{
-					Dig(item, item.value, assemblyList.Result);
-					/*				
-	                    // iterate through all assemblies passed in during creation of DependencyBuilder object
-					foreach (var child in assemblyList.Result)
-					{
-						// force add & dig through all these children
-						item.AddChild(GetValue(child));
-						Dig(child, null);
-					}*/
+					DigChildren(node, assemblyList.Result);
 
 					// this is to indicate that the rootNode specifically has been dug, and to wake up any waiting
 					// initializers - since we have to wait for all digs to finish before we can actually begin
@@ -1014,11 +1006,14 @@ namespace Fact.Extensions.Initialization
 		/// </summary>
 		EventWaitHandle rootNodeEvh = new EventWaitHandle(false, EventResetMode.ManualReset);
 
-		protected override DependencyBuilder<Assembly>.Node CreateItem(Assembly key)
+		protected override DependencyBuilder<Assembly>.Node CreateNode(Assembly key)
 		{
 			return new Node(key, this);
 		}
 
+        /// <summary>
+        /// Represents set of assembly nodes which are initializing asynchronously
+        /// </summary>
 		HashSet<Node> AsyncInitializing = new HashSet<Node>();
 
 		/// <summary>
@@ -1131,7 +1126,7 @@ namespace Fact.Extensions.Initialization
 
 
 			/// <summary>
-			/// Wait for IAsyncLoaders to fully complete
+			/// Wait for all parent's IAsyncLoaders to fully complete
 			/// </summary>
 			void WaitForAsyncInitializers()
 			{
@@ -1166,9 +1161,13 @@ namespace Fact.Extensions.Initialization
 
                 // Wait for "phase 1" async initializers to complete.  Waiting at this point makes sense, because a 
                 // full "dig" as we waited for above means all async initializers have kicked off
+                // TODO: We can change this and wait only for IAsyncLoaders to complete which this particular
+                // Node depends on, potentially unblocking initialization
                 WaitForAsyncInitializers();
 
                 // Only fire overall AsyncCompleted event once, the first time we come in to the initialization phase
+                // NOTE: This odd code location is because we need tree to be fully dug before being 100% sure that
+                // an empty async initializer list == fully completed async initializers.
                 if (!parent.IsAsyncInitialized)
                 {
                     parent.IsAsyncInitialized = true;
@@ -1226,7 +1225,7 @@ namespace Fact.Extensions.Initialization
 				loggerInit.LogInformation("Initialized: " + Name);
 			}
 
-			public Node(Assembly key, AssemblyDependencyBuilder parent) 
+			public Node(Assembly key, AssemblyDependencyBuilder parent) : base(key)
 			{
 				this.parent = parent;
 				loader = key.CreateInstance("Fact._Global.Loader");
