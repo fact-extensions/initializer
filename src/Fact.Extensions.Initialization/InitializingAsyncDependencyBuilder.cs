@@ -79,7 +79,7 @@ namespace Fact.Extensions.Initialization
         /// a) the nodes it depends on are not presently in the AsyncInitializing set
         /// b) the nodes it depends on have had the chance to queue into AsyncInitializing set
         /// </remarks>
-        void WaitForAsyncInitializers()
+        protected void WaitForAsyncInitializers()
         {
             // this code results in ThreadPool being a queue of sorts as the task
             // waits.  Not a fantastic choice, but not so bad either

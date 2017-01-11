@@ -11,7 +11,7 @@ using System.Threading;
 namespace Fact.Extensions.Initialization
 {
     public class AssemblyDependencyBuilder_NEW :
-        InitializingDependencyBuilder<Assembly>
+        InitializingAsyncDependencyBuilder<Assembly>
     {
         static readonly ILogger logger = LogManager.CreateLogger<AssemblyDependencyBuilder>();
         static readonly ILogger loggerInit = LogManager.GetLogger("Initialization");
@@ -26,11 +26,10 @@ namespace Fact.Extensions.Initialization
 
         public AssemblyDependencyBuilder_NEW(Task<IEnumerable<Assembly>> assemblyList)
         {
+            logger.LogDebug("Initializing " + nameof(AssemblyDependencyBuilder_NEW));
             this.assemblyList = assemblyList;
         }
 
-
-        public bool IsAsyncInitialized { get; internal set; }
 
         /// <summary>
         /// Participate during Node construction to initialize first (root) item, if necessary
@@ -45,13 +44,7 @@ namespace Fact.Extensions.Initialization
                 // FIX: outside events latch on to initialized *after* this InitializeRoot is called, meaning other folks will be notified
                 // of assembly init AFTER global Complete event fires via rootNode.  
                 // Not a killer, but incorrect and needs fixing
-                rootNode.Initialized += item =>
-                {
-                    //Logger.Write("InitializeRoot completed");
-
-                    if (Completed != null)
-                        Completed();
-                };
+                rootNode.Initialized += node => Completed?.Invoke();
                 rootNode.DigEnded += node =>
                 {
                     DigChildren(node, assemblyList.Result);
@@ -110,13 +103,7 @@ namespace Fact.Extensions.Initialization
         /// </summary>
         public event Action Completed;
 
-        /// <summary>
-        /// Fired after all ILoaderAsync have completed.  May be a small delay since it is fired
-        /// by initialization process and not ILoaderAsync servicer itself
-        /// </summary>
-        public event Action AsyncCompleted;
-
-        public new class Node : InitializingDependencyBuilder<Assembly>.Node
+        public new class Node : InitializingAsyncDependencyBuilder<Assembly>.Node
         {
             AssemblyDependencyBuilder_NEW parent;
             internal readonly object loader;
@@ -190,32 +177,6 @@ namespace Fact.Extensions.Initialization
             }
 
 
-            /// <summary>
-            /// Wait for all parent's IAsyncLoaders to fully complete
-            /// </summary>
-            void WaitForAsyncInitializers()
-            {
-                // this code results in ThreadPool being a queue of sorts as the task
-                // waits.  Not a fantastic choice, but not so bad either
-                // we do while comparison within lock statement  
-                for (;;)
-                {
-                    Task task;
-
-                    lock (parent.AsyncInitializing)
-                    {
-                        // equivelant of a while loop, but thread safe
-                        if (parent.AsyncInitializing.Count == 0)
-                            break;
-
-                        // look for something a little faster than "First()" call
-                        var _item = parent.AsyncInitializing.First();
-                        task = _item.loaderAsyncTask;
-                    }
-                    task.Wait();
-                }
-            }
-
             protected override void WaitForDependencies()
             {
                 // We have to wait until root Node has been "dug" completely, otherwise
@@ -228,47 +189,11 @@ namespace Fact.Extensions.Initialization
                 // full "dig" as we waited for above means all async initializers have kicked off
                 // TODO: We can change this and wait only for IAsyncLoaders to complete which this particular
                 // Node depends on, potentially unblocking initialization
-                WaitForAsyncInitializers();
-
-                // Only fire overall AsyncCompleted event once, the first time we come in to the initialization phase
-                // NOTE: This odd code location is because we need tree to be fully dug before being 100% sure that
-                // an empty async initializer list == fully completed async initializers.
-                if (!parent.IsAsyncInitialized)
-                {
-                    parent.IsAsyncInitialized = true;
-
-                    if (parent.AsyncCompleted != null)
-                        parent.AsyncCompleted();
-                }
+                parent.WaitForAsyncInitializers();
             }
 
             protected override void Initialize()
             {
-#if UNUSED
-				// We have to wait until root Node has been "dug" completely, otherwise
-				// not all async loaders may have had a chance to start
-				parent.rootNodeEvh.WaitOne();
-
-				// Wait for "phase 1" async initializers to complete.  Waiting at this point makes sense, because a 
-				// full "dig" as we waited for above means all async initializers have kicked off
-				WaitForAsyncInitializers();
-
-				// Only fire overall AsyncCompleted event once, the first time we come in to the initialization phase
-				if (!parent.IsAsyncInitialized)
-				{
-					parent.IsAsyncInitialized = true;
-
-					if (parent.AsyncCompleted != null)
-						parent.AsyncCompleted();
-				}
-#endif
-                if (InitBegin != null)
-                    InitBegin(this);
-
-                loggerInit.LogInformation("Initializing: " + Name + ": " + Children.Cast<Node>().
-                    Select(x => x.Name + (x.IsInitialized ? " " : " not ") + "initialized").
-                    ToString(", "));
-
                 try
                 {
                     ((ILoader)loader).Initialize();
@@ -314,69 +239,13 @@ namespace Fact.Extensions.Initialization
                 }
             }
 
-            /// <summary>
-            /// Have this so that we have a chance to latch on some event listeners
-            /// </summary>
-            public override void Start()
+            public override bool IsAsync => loader is ILoaderAsync;
+
+            protected override void DoAsyncLoad()
             {
-                var loaderAsync = loader as ILoaderAsync;
-
-                if (loaderAsync != null)
-                {
-                    loggerInit.LogInformation("Initializing (async kickoff): " + this.value.GetName().Name);
-
-                    lock (parent.AsyncInitializing)
-                    {
-                        parent.AsyncInitializing.Add(this);
-                    }
-
-                    if (AsyncBegin != null)
-                        AsyncBegin(this);
-
-                    loaderAsyncTask = taskFactory.StartNew(() =>
-                    {
-                        loggerInit.LogInformation("Initializing (async actual): " + this.value.GetName().Name);
-
-                        loaderAsync.Load();
-
-                        loggerInit.LogInformation("Initialized (async): " + this.value.GetName().Name);
-                    });
-
-                    loaderAsyncTask.ContinueWith(t => exceptionPolicy.HandleException(t.Exception),
-                        TaskContinuationOptions.OnlyOnFaulted);
-
-                    loaderAsyncTask.ContinueWith(antecendent =>
-                    {
-                        lock (parent.AsyncInitializing)
-                        {
-                            parent.AsyncInitializing.Remove(this);
-                        }
-
-                        if (AsyncEnd != null)
-                            AsyncEnd(this);
-                    }, TaskContinuationOptions.NotOnFaulted);
-                }
+                ((ILoaderAsync)loader).Load();
             }
 
-            /// <summary>
-            /// Called when ILoader initialize portion begins
-            /// </summary>
-            /// <remarks>
-            /// These differenciate from "Initialized" event because this InitBegin specifically fires *AFTER* AsyncEnd, and
-            /// also this InitEnd fires *BEFORE* Completed
-            /// </remarks>
-            public event Action<Node> InitBegin;
-
-            /// <summary>
-            /// Called when ILoaderAsync portion begins
-            /// </summary>
-            public event Action<Node> AsyncBegin;
-            /// <summary>
-            /// Called when ILoaderAsync portion is complete
-            /// </summary>
-            public event Action<Node> AsyncEnd;
-
-            Task loaderAsyncTask;
 
             public override string Name { get { return value.GetName().Name; } }
 

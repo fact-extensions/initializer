@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 
 using Microsoft.Extensions.Logging;
+using Fact.Extensions.Collection;
 
 namespace Fact.Extensions.Initialization
 {
@@ -154,13 +155,19 @@ namespace Fact.Extensions.Initialization
                             initializingTask = taskFactory.StartNew(() =>
                             {
                                 WaitForDependencies();
+
+                                Initializing?.Invoke(this);
+
+                                loggerInit.LogInformation("Initializing: " + Name + ": " + Children.Cast<Node>().
+                                    Select(x => x.Name + (x.IsInitialized ? " " : " not ") + "initialized").
+                                    ToString(", "));
+
                                 Initialize();
 
                                 initializing = false;
                                 IsInitialized = true;
 
-                                if (Initialized != null)
-                                    Initialized(this);
+                                Initialized?.Invoke(this);
                             });
                         }
                         else
@@ -168,8 +175,7 @@ namespace Fact.Extensions.Initialization
                             WaitForDependencies();
 
                             IsInitialized = true;
-                            if (Initialized != null)
-                                Initialized(this);
+                            Initialized?.Invoke(this);
                         }
                     }
                 }
@@ -226,6 +232,11 @@ namespace Fact.Extensions.Initialization
             /// List of children still requiring initialization
             /// </summary>
             public HashSet<Node> ChildrenUninitialized = new HashSet<Node>();
+
+            /// <summary>
+            /// FIred when this particular node begins its initialization phase
+            /// </summary>
+            public event Action<Node> Initializing;
 
             /// <summary>
             /// Fired when this particular node and its T finishes initializing

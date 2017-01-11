@@ -1,5 +1,6 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyModel;
+using Microsoft.Extensions.Logging;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
 using System.Collections.Generic;
@@ -47,6 +48,37 @@ namespace Fact.Extensions.Initialization.Tests
             b.Dig(entryAssembly, null);
         }
 
+
+
+        [TestMethod]
+        public void DependencyBuilder_NEWTest()
+        {
+            var dependencies = DependencyContext.Default.RuntimeLibraries;
+            var __assemblies = dependencies.ToArray();
+            var _assemblies = dependencies.Select(x =>
+            {
+                try
+                {
+                    return Assembly.Load(new AssemblyName(x.Name));
+                }
+                catch (Exception e)
+                {
+                    return null;
+                }
+            }
+                    );
+
+            // VERY kludgey, only doing this in the meantime until AssemblyDependencyBuilder takes
+            // RuntimeLibrary instead of Assembly as its input
+            var assemblies = _assemblies.Where(x => x != null);
+            var assembliesTask = Task.FromResult(assemblies);
+            var b = new AssemblyDependencyBuilder_NEW(assembliesTask);
+
+            //var entryAssembly = Assembly.GetEntryAssembly();
+            var entryAssembly = assemblies.First(x => x.FullName.StartsWith("Fact.Extensions.Initialization.Tests,"));
+            b.Dig(entryAssembly, null);
+        }
+
         [AssemblyInitialize]
         static public void Init(TestContext context)
         {
@@ -55,6 +87,11 @@ namespace Fact.Extensions.Initialization.Tests
             sc.AddLogging();
 
             var sp = sc.BuildServiceProvider();
+
+            var lf = sp.GetService<ILoggerFactory>();
+
+            lf.AddConsole(LogLevel.Trace);
+
             LogManager.Initializer(sp);
         }
 
