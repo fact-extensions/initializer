@@ -13,13 +13,13 @@ namespace Fact.Extensions.Initialization.Tests
     [TestClass]
     public class BasicTests
     {
-        [TestMethod]
+        //[TestMethod]
         public void Basic1Test()
         {
             GetReferencingAssemblies("");
         }
 
-        [TestMethod]
+        //[TestMethod]
         public void DependencyWalkerTest()
         {
             var dependencies = DependencyContext.Default.RuntimeLibraries;

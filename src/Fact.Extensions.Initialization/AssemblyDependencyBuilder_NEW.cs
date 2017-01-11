@@ -57,15 +57,15 @@ namespace Fact.Extensions.Initialization
             foreach (var item in FILO)
             {
 #if FEATURE_MULTILOADER
-                foreach (var loader in item.loaders)
+                foreach (var loader in item.loaders.OfType<ILoaderShutdown>())
                 {
 #else
                 {
-                    loader = item.loader;
+                    loader = (ILoaderShutdown)item.loader;
 #endif
                     loggerInit.LogInformation("Shutdown for assembly: " +
-                    loader.GetType().GetTypeInfo().Assembly.FullName);
-                    ((ILoaderShutdown)loader).Shutdown();
+                        loader.GetType().GetTypeInfo().Assembly.FullName);
+                    loader.Shutdown();
                 }
             }
         }
@@ -104,6 +104,8 @@ namespace Fact.Extensions.Initialization
                     // We already filter by ILoader but old flavor of AssemblyDependencyBuilder could actually handle
                     // standalone ILoaderAsync or ILoaderShutdown, so be explicit here in anticipation of bringing that functionality
                     // back
+                    // TODO: Issue warning if multiple loaders are detected, suggest using only one because order of execution
+                    // is undefined.  Multiple async is OK
                     var hasLoader = loaders.OfType<ILoader>().Any();
 #else
                     var hasLoader = loader is ILoader;

@@ -79,7 +79,7 @@ namespace Fact.Extensions.Initialization
 
         //internal static readonly TaskFactory taskFactory = Task.Factory;
 
-        new abstract public class Node : DependencyBuilderNode<T>
+        new abstract public class Node : DependencyBuilderNode<T>, INode
         {
 
             public bool IsInitialized
@@ -242,6 +242,23 @@ namespace Fact.Extensions.Initialization
             /// Fired when this particular node and its T finishes initializing
             /// </summary>
             public event Action<Node> Initialized;
+        }
+
+        public new interface INode : DependencyBuilder<T>.INode
+        {
+            /// <summary>
+            /// Fired when this particular node begins its initialization phase
+            /// </summary>
+            event Action<Node> Initializing;
+
+            /// <summary>
+            /// Fired when this particular node and its T finishes initializing
+            /// </summary>
+            event Action<Node> Initialized;
+
+            string Name { get; }
+
+            bool IsInitialized { get; }
         }
     }
 }

@@ -9,6 +9,10 @@ namespace Fact.Extensions.Initialization
 {
     public class DependencyBuilder
     {
+        public interface INode
+        {
+            void Start();
+        }
     }
 
     public abstract class DependencyBuilder<T> : DependencyBuilder
@@ -18,7 +22,7 @@ namespace Fact.Extensions.Initialization
         /// <summary>
         /// This class represents a node in the dependency tree
         /// </summary>
-        public abstract class Node
+        public abstract class Node : INode
         {
             readonly public T value;
 

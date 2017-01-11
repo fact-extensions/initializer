@@ -180,7 +180,7 @@ namespace Fact.Extensions.Initialization
         }
 
 
-        public interface INode
+        public new interface INode : InitializingDependencyBuilder<T>.INode
         {
             /// <summary>
             /// Called when async init portion begins
@@ -207,7 +207,11 @@ namespace Fact.Extensions.Initialization
             /// </summary>
             public event Action<INode> AsyncEnd;
 
-
+            /// <summary>
+            /// Implement this to perform actual async load operation,
+            /// surrounding Node class actually creates the surrounding 
+            /// task so don't do a Task.Run in here
+            /// </summary>
             protected abstract void DoAsyncLoad();
 
 

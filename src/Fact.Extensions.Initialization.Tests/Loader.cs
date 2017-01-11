@@ -22,3 +22,21 @@ namespace Fact._Global
         }
     }
 }
+
+
+namespace Fact.Extensions.Initialization.Tests
+{
+    /// <summary>
+    /// Dummy initializer in crusty old namespace paradigm, just to get things online
+    /// and tested
+    /// </summary>
+    class Loader : ILoader
+    {
+        public void Initialize()
+        {
+            var logger = Fact.Extensions.LogManager.CreateLogger<Loader>();
+
+            logger.LogInformation("Got to alternate initializer");
+        }
+    }
+}
