@@ -25,6 +25,8 @@ using Fact.Extensions.Configuration;
 #endif
 using Microsoft.Extensions.Logging;
 
+using Fact.Extensions.Collection;
+
 namespace Fact.Extensions.Initialization
 {
     /// <summary>
@@ -829,6 +831,7 @@ namespace Fact.Extensions.Initialization
         {
             var entry = Assembly.GetEntryAssembly();
 
+#if !NETCORE
             if (entry == null)
             {
                 // WCF & unit test hosted scenarios don't tell us what the entry assembly is
@@ -853,7 +856,7 @@ namespace Fact.Extensions.Initialization
                     entry = Assembly.GetCallingAssembly();
                 }
             }
-
+#endif
             return entry;
         }
 
@@ -881,11 +884,16 @@ namespace Fact.Extensions.Initialization
                 // * If code moves between different assemblies,
                 // this comparison may break, so this is a little 
                 // bit kludgey
+
+#if !NETCORE
                 var coreAssembly = Assembly.GetExecutingAssembly();
+#endif
                 var entryAssembly = GetEntryAssembly();
 
+#if !NETCORE
                 if(entryAssembly == coreAssembly)
                     entryAssembly = Assembly.GetCallingAssembly();
+#endif
 
                 Initialize(entryAssembly);
             }
@@ -901,11 +909,15 @@ namespace Fact.Extensions.Initialization
         /// <returns></returns>
         public static Task InitializeAsync()
         {
-			var coreAssembly = Assembly.GetExecutingAssembly();
+#if !NETCORE
+            var coreAssembly = Assembly.GetExecutingAssembly();
+#endif
 			var entryAssembly = GetEntryAssembly();
 
-			if(entryAssembly == coreAssembly)
+#if !NETCORE
+            if(entryAssembly == coreAssembly)
 				entryAssembly = Assembly.GetCallingAssembly();
+#endif
 
 			return Task.Factory.StartNew(() => Initialize(entryAssembly, false));
         }
