@@ -347,6 +347,9 @@ namespace Fact.Extensions.Initialization
             /// </summary>
             public virtual void Start() { }
 
+            /// <summary>
+            /// Indicates whether we should dig into this node
+            /// </summary>
             public virtual bool ShouldDig { get { return true; } }
         }
 
@@ -445,7 +448,11 @@ namespace Fact.Extensions.Initialization
 
             try
             {
-                Dig(item, value, item.GetChildren());
+                var children = item.GetChildren();
+#if DEBUG
+                children = children.ToArray();
+#endif
+                Dig(item, value, children);
                 /*
                 foreach (var child in item.GetChildren())
                 {

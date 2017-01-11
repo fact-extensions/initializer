@@ -28,7 +28,7 @@ namespace Fact.Extensions
             return provider.GetService<ILoggerFactory>().CreateLogger(named);
         }
 
-        static void Initializer(IServiceProvider provider)
+        public static void Initializer(IServiceProvider provider)
         {
             LogManager.provider = provider;
         }

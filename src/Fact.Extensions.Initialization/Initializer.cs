@@ -1160,6 +1160,8 @@ namespace Fact.Extensions.Initialization
             {
                 // We have to wait until root Node has been "dug" completely, otherwise
                 // not all async loaders may have had a chance to start
+                // FIX: Appear we may have a bug where if NO loaders run at all, this never knows to ping
+                // and get Set()
                 parent.rootNodeEvh.WaitOne();
 
                 // Wait for "phase 1" async initializers to complete.  Waiting at this point makes sense, because a 
@@ -1267,7 +1269,6 @@ namespace Fact.Extensions.Initialization
 					if (AsyncBegin != null)
 						AsyncBegin(this);
 
-#if NET40
                     loaderAsyncTask = taskFactory.StartNew(() =>
                     {
                         loggerInit.LogInformation("Initializing (async actual): " + this.value.GetName().Name);
@@ -1275,7 +1276,10 @@ namespace Fact.Extensions.Initialization
                         loaderAsync.Load();
 
                         loggerInit.LogInformation("Initialized (async): " + this.value.GetName().Name);
-                    }, exceptionPolicy.HandleException);
+                    });
+                    
+                    loaderAsyncTask.ContinueWith(t => exceptionPolicy.HandleException(t.Exception), 
+                        TaskContinuationOptions.OnlyOnFaulted);
 
                     loaderAsyncTask.ContinueWith(antecendent =>
                     {
@@ -1286,24 +1290,7 @@ namespace Fact.Extensions.Initialization
 
                         if (AsyncEnd != null)
                             AsyncEnd(this);
-                    });
-#else
-                    loaderAsyncTask = taskFactory.StartNew(() =>
-                        {
-                            loggerInit.LogInformation("Initializing (async actual): " + this.value.GetName().Name);
-
-                            loaderAsync.Load();
-                            lock (parent.AsyncInitializing)
-                            {
-                                parent.AsyncInitializing.Remove(this);
-                            }
-
-                            if (AsyncEnd != null)
-                                AsyncEnd(this);
-
-                            loggerInit.LogInformation("Initialized (async): " + this.value.GetName().Name);
-                        }, exceptionPolicy.HandleException);
-#endif
+                    }, TaskContinuationOptions.NotOnFaulted);
 				}
 			}
 

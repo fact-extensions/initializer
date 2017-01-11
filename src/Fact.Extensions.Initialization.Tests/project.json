@@ -4,7 +4,9 @@
   "testRunner": "mstest",
 
   "dependencies": {
-    //"Fact.Extensions.Initialization": "1.0.0-*"
+    "Fact.Extensions.Initialization": "1.0.0-*",
+    "Microsoft.Extensions.DependencyInjection": "1.0.1",
+    "Microsoft.Extensions.Logging": "1.0.1"
   },
 
   "frameworks": {
