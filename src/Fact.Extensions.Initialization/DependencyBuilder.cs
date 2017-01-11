@@ -72,9 +72,15 @@ namespace Fact.Extensions.Initialization
             public abstract IEnumerable<T> GetChildren();
 
             /// <summary>
-            /// Have this so that we have a chance to latch on some event listeners to Item
-            /// before we get all crazy with threads
+            /// Begin node T value processing
+            /// Have this so that we have a chance to latch on some event listeners to Node
+            /// from parent DependencyBuilder - 
             /// </summary>
+            /// <remarks>
+            /// some Nodes during their init/startup phase while processing T 
+            /// fire off events DependencyBuilder is interested in.  We can't do that from
+            /// the constructor, because the events haven't been latched onto yet.
+            /// </remarks>
             public virtual void Start() { }
 
             /// <summary>
