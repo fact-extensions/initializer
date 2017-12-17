@@ -22,9 +22,8 @@ namespace Fact.Extensions.Initialization
     /// TODO: Consolodate this with the Collections version
     /// </summary>
     /// <typeparam name="T"></typeparam>
-    public interface IFactory<T>
+    public interface IFactory<T> : Fact.Extensions.Factories.IFactory<T>
     {
-        T Create();
     }
 }
 
