@@ -7,6 +7,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using Fact.Extensions;
+using Fact.Extensions.Factories;
 
 #if CUSTOM_THREADPOOL
 //using Castle.MicroKernel.Registration;
@@ -15,17 +16,6 @@ using Fact.Extensions;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Reflection;
-
-namespace Fact.Extensions.Initialization
-{
-    /// <summary>
-    /// TODO: Consolodate this with the Collections version
-    /// </summary>
-    /// <typeparam name="T"></typeparam>
-    public interface IFactory<T> : Fact.Extensions.Factories.IFactory<T>
-    {
-    }
-}
 
 namespace Fact.Extensions.Initialization
 {
@@ -94,28 +84,10 @@ namespace Fact.Extensions.Initialization
         }
     }
 
-    public interface IFactory<TInput, TOutput>
-    {
-        bool CanCreate(TInput id);
-
-        TOutput Create(TInput id);
-    }
-
 
     /// <summary>
-    /// Meta provides an optimization cache area, since often the CanCreate does a lookup operation
-    /// of some kind which then the create may have to repeat
+    /// TODO: Consolidate with Fact.Extensions.Factories.AggregateFactory
     /// </summary>
-    /// <typeparam name="TInput"></typeparam>
-    /// <typeparam name="TOutput"></typeparam>
-    public interface IFactoryWithMeta<TInput, TOutput> : IFactory<TInput, TOutput>
-    {
-        bool CanCreate(TInput id, out object meta);
-
-        TOutput Create(TInput id, object meta);
-    }
-
-
     public class FactoryAggregator<TInput, TOutput> : IFactoryWithMeta<TInput, TOutput>
     {
         LinkedList<IFactory<TInput, TOutput>> candidates = new LinkedList<IFactory<TInput, TOutput>>();
@@ -234,6 +206,10 @@ namespace Fact.Extensions.Initialization
     }
 
 
+
+    /// <summary>
+    /// TODO: Consolidate with Fact.Extensions.Factories.DelegateFactory
+    /// </summary>
     public class DelegateFactory<TInput, TOutput> : IFactory<TInput, TOutput>
     {
         readonly Func<TInput, bool> canCreate;
